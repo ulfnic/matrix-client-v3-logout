@@ -1,10 +1,10 @@
-# matrix-logout
+# matrix-client-v3-logout
 
 `curl` wrapper for using an access token to logout of a matrix homeserver.
 
 ```bash
 # Logout
-matrix-logout -u 'myuser' -T <(printf '%s' 'myaccesstoken') 'https://myhomeserver.org'
+matrix-client-v3-logout -u 'myuser' -T <(printf '%s' 'myaccesstoken') 'https://myhomeserver.org'
 ```
 ```bash
 # stdout
@@ -13,10 +13,10 @@ matrix-logout -u 'myuser' -T <(printf '%s' 'myaccesstoken') 'https://myhomeserve
 ---
 ```bash
 # Output help
-matrix-logout --help
+matrix-client-v3-logout --help
 ```
 ```bash
-matrix-logout [ARGUEMENT...] [--] [HOMESERVER]
+matrix-client-v3-logout [ARGUEMENT...] [--] [HOMESERVER]
 
 curl wrapper for using an access_token to logout of a matrix homeserver.
 
@@ -59,10 +59,10 @@ VALUE PRIORITY
 
 EXAMPLES
 	# User interactive prompts to enter missing information that's required
-	matrix-logout
+	matrix-client-v3-logout
 
 	# Headless request using ARGUEMENTs
-	matrix-logout -T <(printf '%s' 'mytoken') 'https://myhomeserver.org'
+	matrix-client-v3-logout -T <(printf '%s' 'mytoken') 'https://myhomeserver.org'
 
 	# Create a USER_FILE
 	>'/path/to/myuser'
@@ -73,5 +73,5 @@ EXAMPLES
 	EOF
 
 	# Headless request using a USER_FILE
- 	matrix-logout -U '/path/to/myuser'
+ 	matrix-client-v3-logout -U '/path/to/myuser'
 ```
