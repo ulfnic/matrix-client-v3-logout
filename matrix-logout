@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+[[ $DEBUG ]] && set -x
+set -o errexit
+LANG=C
+
+
+help_doc() {
+	{ read -r -d '' || :; [[ $REPLY == '|'* ]] && REPLY=${REPLY:1}; printf '%s' "${REPLY//$'\n|'/$'\n'}"; } <<-'HelpDoc'
+		|matrix-logout [ARGUEMENT...] [--] [HOMESERVER]
+
+		|curl wrapper for using an access_token to logout of a matrix homeserver.
+
+		|DEPENDENCIES
+		|	curl
+
+		|ARGUEMENT
+		|	-T|--access-token-file ACCESS_TOKEN_FILE   See: ACCESS_TOKEN_FILE
+		|	-U|--user-file USER_FILE                   See: USER_FILE
+		|	--dry-run                                  Do everything except send the request
+		|	--debug                                    Output debugging information
+		|	-h|--help                                  Print help doc
+		|	HOMESERVER                                 Homeserver base url
+
+		|ACCESS_TOKEN_FILE
+		|	Path to a file containing an access token on the first line. Additional lines are ignored.
+		|	If the path is a hyphen (-), path becomes stdin.
+
+		|USER_FILE
+		|	Path to a file containing VALUE_PAIRs as an alternative to using ARGUEMENTs, ex:
+		|		VAR_NAME=VALUE
+		|		
+		|	If the path is a hyphen (-), path becomes stdin.
+		|
+		|	ACCEPTED VAR_NAMEs:
+		|		homeserver, access_token
+		|
+		|	- Lines not containing a VALUE_PAIR with an ACCEPTED VAR_NAME are ignored.
+		|	- Lines beginning with equals (=) after removing tab/space indenting are comments.
+		|	- Each VALUE_PAIR must be on its own line ending in a newline.
+		|	- VAR_NAME is every character after tab/space indenting until the first equals (=).
+		|	- VALUE is every character after the first equals (=) until the first newline (\n).
+		|	- VAR_NAME and VALUE are read as raw text with no escaping or special rules.
+
+		|ENVIRONMENT
+		|	MATRIX__HOMESERVER                    Matrix homeserver url, ex: https://myhomeserver.org
+
+		|VALUE PRIORITY
+		|	ARGUEMENT value > ACCESS_TOKEN_FILE value > USER_FILE value > ENVIRONMENT value
+
+		|EXAMPLES
+		|	# User interactive prompts to enter missing information that's required
+		|	matrix-logout
+		|
+		|	# Headless request using ARGUEMENTs
+		|	matrix-logout -T <(printf '%s' 'mytoken') 'https://myhomeserver.org'
+		|
+		|	# Create a USER_FILE
+		|	>'/path/to/myuser'
+		|	chmod 600 -- '/path/to/myuser'
+		|	cat <<-'EOF' > '/path/to/myuser'
+		|		homeserver=https://myhomeserver.org
+		|		access_token=my token
+		|	EOF
+		|
+		|	# Headless request using a USER_FILE
+		| 	matrix-logout -U '/path/to/myuser'
+	HelpDoc
+	[[ $1 ]] && exit "$1"
+}
+
+
+
+print_stderr() {
+	if [[ $1 == '0' ]]; then
+		[[ $2 ]] && printf "$2" "${@:3}" 1>&2 || :
+	else
+		[[ $2 ]] && printf '%s'"$2" "ERROR: ${0##*/}, " "${@:3}" 1>&2 || :
+		exit "$1"
+	fi
+}
+
+
+
+# Check dependencies
+type curl 1>/dev/null
+
+
+homeserver=
+homeservers=()
+user_file_path=
+access_token_path=
+debug=
+dry_run=
+declare -A user=(
+	['homeserver']=
+	['access_token']=
+)
+
+while [[ $1 ]]; do
+	case $1 in
+		'--access-token-file'|'-T')
+			shift; access_token_path=$1 ;;
+		'--user-file'|'-U')
+			shift; user_file_path=$1 ;;
+		'--dry-run')
+			dry_run=1 ;;
+		'--debug')
+			debug=1 ;;
+		'--help'|'-h')
+			help_doc 0 ;;
+		'--')
+			shift; break ;;
+		'-'*)
+			print_stderr 1 '%s %q\n' 'unrecognized parameter:' "$1" ;;
+		*)
+			homeservers+=("$1") ;;
+	esac
+	shift
+done
+homeservers+=("$@")
+
+
+
+if [[ ${#homeservers[@]} != '0' ]]; then
+	[[ ${#homeservers[@]} != '1' ]] && print_stderr 1 '%s\n' 'more than one base url parameter given'
+	user['homeserver']=${homeservers[0]}
+fi
+unset homeservers
+
+
+
+if [[ $access_token_path && ! ${user['access_token']} ]]; then
+	[[ $access_token_path == '-' ]] && access_token_path='/proc/self/fd/0'
+	{ read -r user['access_token'] || :; } < "$access_token_path"
+fi
+
+
+
+# Define function for loading auth files 
+load_user_file() {
+	# input vars: user, user_file_path
+	local no_clobber=$1 file_str var_name
+
+
+	[[ $user_file_path == '-' ]] && user_file_path='/proc/self/fd/0'
+
+
+	while IFS='=' read -r prop val; do
+		[[ $val ]] || continue
+		prop=${prop#"${prop%%[![:space:]]*}"}
+		[[ $prop ]] || continue
+
+		# Only accept value pairs the script is looking for
+		[[ user["$prop"] ]] || continue
+
+		[[ $no_clobber && ${user["$prop"]} ]] && continue
+		user["$prop"]=$val
+	done < "$user_file_path"
+
+
+	# debug: print contents of gathered user data
+	if [[ $debug ]]; then
+		printf '%s\n' "Read values from ${user_file_path@Q}:" 1>&2
+		for prop in "${!user[@]}"; do
+			[[ $prop ]] || continue
+			printf '%s\n' "  $prop=${user["$prop"]}" 1>&2
+		done
+		printf '\n' 1>&2
+	fi
+}
+
+
+
+# Load auth file if provided, without clobbering
+[[ $user_file_path ]] && load_user_file 1
+
+
+
+# Load env variables if provided, without clobbering
+: ${user['homeserver']:=$MATRIX__HOMESERVER}
+
+
+
+# Define function for setting the value of a parent variable with an interactive prompt
+prompt() {
+	local read_prompt=$1 read_var=$2 visibility=$3 read_params=()
+
+	[[ $visibility == 'show' || $visibility == 'hide' ]] || print_stderr 1 '%s\n' "bad use of prompt() params: ${*@Q}"
+
+	# stdin must be connected to a terminal
+	[[ -t 0 ]] || return 1
+
+	[[ $visibility == 'hide' ]] && read_params+=('-s')
+	read_params+=('-r' '-p' "${read_prompt} " "$read_var")
+
+	IFS= read "${read_params[@]}" < /dev/tty
+
+	[[ $visibility == 'hide' ]] && printf '\n' 1>&2
+	[[ ! ${!read_var} ]] && return 4
+	return 0
+}
+
+
+
+# Prompt for values mandatory for a successful request
+[[ ${user['homeserver']} ]] || prompt 'Enter base url (ex: https://matrix-client.matrix.org):' "user['homeserver']" 'show' || print_stderr 1 '%s\n' 'no homeserver provided'
+[[ ${user['access_token']} ]] || prompt 'Enter access token:' "user['access_token']" 'hide' || print_stderr 1 '%s\n' 'no access token provided'
+
+
+
+# debug: print contents of gathered user data
+if [[ $debug ]]; then
+	printf '%s\n' "Using values:" 1>&2
+	for prop in "${!user[@]}"; do
+		[[ $prop ]] || continue
+		printf '%s\n' "  $prop=${user["$prop"]}" 1>&2
+	done
+	printf '\n' 1>&2
+fi
+
+
+
+req_auth_header="Authorization: Bearer ${user['access_token']}"
+
+
+
+# debug: print request
+if [[ $debug ]]; then
+	printf '%s\n' "-H ${req_auth_header}"
+
+	curl() {
+		printf '%s ' 'curl' "${@@Q}" 1>&2; printf '\n---\n' 1>&2
+		[[ $dry_run ]] || curl "$@"
+	}
+elif [[ $dry_run ]]; then
+	exit 0
+fi
+
+
+
+# Send request
+curl \
+	-X POST \
+	-H @<(printf '%s' "$req_auth_header") \
+	-- \
+	"${user['homeserver']}/_matrix/client/v3/logout"
+
+
+
+[[ -t 0 ]] && printf '\n' 1>&2
+exit 0
+
+
+
