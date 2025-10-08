@@ -52,7 +52,7 @@ USER_FILE
 	- VAR_NAME and VALUE are read as raw text with no escaping or special rules.
 
 ENVIRONMENT
-	MATRIX__HOMESERVER                    Matrix homeserver url, ex: https://myhomeserver.org
+	MATRIX__HOMESERVER   Matrix homeserver url, ex: https://myhomeserver.org
 
 VALUE PRIORITY
 	ARGUEMENT value > ACCESS_TOKEN_FILE value > USER_FILE value > ENVIRONMENT value
