@@ -43,6 +43,7 @@ help_doc() {
 
 		|ENVIRONMENT
 		|	MATRIX__HOMESERVER          Matrix homeserver url, ex: https://myhomeserver.org
+		|	MATRIX__ACCESS_TOKEN_FILE   See: ACCESS_TOKEN_FILE
 		|	MATRIX__USER_FILE           See: USER_FILE
 
 		|VALUE PRIORITY
@@ -130,6 +131,7 @@ unset homeservers
 
 
 
+: ${access_token_path:=$MATRIX__ACCESS_TOKEN_FILE}
 if [[ $access_token_path && ! ${user['access_token']} ]]; then
 	[[ $access_token_path == '-' ]] && access_token_path='/proc/self/fd/0'
 	{ read -r user['access_token'] || :; } < "$access_token_path"

@@ -53,6 +53,7 @@ USER_FILE
 
 ENVIRONMENT
 	MATRIX__HOMESERVER          Matrix homeserver url, ex: https://myhomeserver.org
+	MATRIX__ACCESS_TOKEN_FILE   See: ACCESS_TOKEN_FILE
 	MATRIX__USER_FILE           See: USER_FILE
 
 VALUE PRIORITY
